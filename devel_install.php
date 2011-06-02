@@ -134,9 +134,12 @@ class DevelInstall_Filesystem extends DevelInstall_InstallProfileable
 {
 	public function getParams()
 	{
+		$userInfo = posix_getpwuid(posix_getuid());
+		$groupInfo = posix_getgrgid(posix_getgid());
+
 		$params = array(
-			new DevelInstall_FormParam_Filesystem('uid', 'text', ''),
-			new DevelInstall_FormParam_Filesystem('gid', 'text', ''),
+			new DevelInstall_FormParam_Filesystem('uid', 'text', $userInfo['name']),
+			new DevelInstall_FormParam_Filesystem('gid', 'text', $groupInfo['name']),
 			new DevelInstall_FormParam_Filesystem('dirmod', 'mod', '0755'),
 			new DevelInstall_FormParam_Filesystem('filemod', 'mod', '0644'),
 			new DevelInstall_FormParam_Filesystem('php', 'path', '/usr/bin/php')
@@ -200,16 +203,20 @@ class DevelInstall_Filesystem extends DevelInstall_InstallProfileable
 		$targetUid = $this->getParam('uid')->getValue();
 		$targetGid = $this->getParam('gid')->getValue();
 		
-		@chown('./', $targetUid);
-		@chgrp('./', $targetGid);
-		@chmod('./', $targetMod);
+		$docRoot = dirname($_SERVER['SCRIPT_FILENAME']);
 		
-		$uid = fileowner('./');
-		$gid = filegroup('./');
-		$mod = substr(decoct( fileperms('./') ), 1);
-		
+		@chown($docRoot, $targetUid);
+		@chgrp($docRoot, $targetGid);
+		exec("chmod $targetMod $docRoot");
+
+		$uid = fileowner($docRoot);
+		$gid = filegroup($docRoot);
+		$mod = substr(decoct( fileperms($docRoot) ), 1);
+
 		$user = posix_getpwuid($uid);
 		$group = posix_getpwuid($gid);
+		
+		$phpCliInfo = shell_exec($this->getParam('php')->getValue() . ' -v');
 		
 		if ($targetUid AND $user['name'] != $targetUid) {
 			$errors[] = "chown $targetUid .";
@@ -226,8 +233,17 @@ class DevelInstall_Filesystem extends DevelInstall_InstallProfileable
 		if (count($errors)) {
 			echo "<pre>\n\n";
 			echo "Run the following commands to setup the install script environment:\n\n";
-			echo "cd " . dirname(__FILE__) . "\n";
+			echo "cd " . $docRoot . "\n";
 			echo join("\n", $errors);
+			die();
+		}
+		
+		if (! $phpCliInfo) {
+			echo "<pre>\n\n";
+			echo "You need to set the path to PHP correctly.\n\n";
+			echo "Use one the following commands to determine the path to use:\n\n";
+			echo "which php\n";
+			echo "whereis php\n";
 			die();
 		}
 		
@@ -308,14 +324,12 @@ class DevelInstall_Magento extends DevelInstall_InstallProfileable
 	
 	public function prepare()
 	{
-		//$user = posix_getpwuid(posix_getuid());
-		//print_r($user); die();
-		$dir = dirname(__FILE__);
+		$dir = dirname($_SERVER['SCRIPT_FILENAME']);
 		
 		chdir($dir);
 		
 		if (! is_writeable($dir)) {
-			die('Directory not writeable!');
+			die("Directory not writeable! [$dir]");
 		}
 		
 		$this->downloadUrl = $this->getDownloadUrl($this->getParam('version')->getValue());
